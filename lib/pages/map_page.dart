@@ -169,7 +169,7 @@ class MapPage extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: Material(
             color: Colors.white,
-            elevation: 4.0,
+            elevation: 5.0,
             child: StreamBuilder<List<LocationModel>>(
               stream: searchResultSupject,
               builder: (context, snapshot) {
