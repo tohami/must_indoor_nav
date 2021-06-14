@@ -166,7 +166,7 @@ class MapPage extends StatelessWidget {
       ],
       builder: (context, transition) {
         return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(2),
           child: Material(
             color: Colors.white,
             elevation: 4.0,
