@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "562873413907",
+    "project_id": "indoornav-e0e18",
+    "storage_bucket": "indoornav-e0e18.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:562873413907:android:a874e0a6f806468df76ae6",
+        "android_client_info": {
+          "package_name": "com.example.indoor_map_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "562873413907-51sl171uadtlctsi4aes2du4o8191ivb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0tfC4CQVMTP5jDTDYF1GCiHpn7XQikqM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "562873413907-51sl171uadtlctsi4aes2du4o8191ivb.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
