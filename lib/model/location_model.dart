@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart';
+
 class LocationModel {
   String id  ;
   String title  ;
@@ -24,4 +26,5 @@ class LocationModel {
     data['type'] = this.type;
     return data;
   }
+  Offset get offset => Offset(x, y) ;
 }

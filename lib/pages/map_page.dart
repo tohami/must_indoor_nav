@@ -1,13 +1,13 @@
+import 'dart:math';
+import 'dart:ui';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
-import 'dart:ui';
-import 'dart:math';
-import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:indoor_map_app/model/location_model.dart';
+import 'package:indoor_map_app/model/log_model.dart';
 import 'package:indoor_map_app/model/map_object.dart';
 import 'package:material_floating_search_bar/material_floating_search_bar.dart';
 import 'package:qrscan/qrscan.dart' as scanner;
@@ -15,11 +15,24 @@ import 'package:rxdart/rxdart.dart';
 
 import 'map/zoom_container.dart';
 
-class MapPage extends StatelessWidget {
-  final FirebaseFirestore firestore = FirebaseFirestore.instance;
+class MapPage extends StatefulWidget {
+  MapPage({Key key}) : super(key: key);
 
-  final BehaviorSubject<LocationModel> selectedQrSubject =
-      BehaviorSubject.seeded(null);
+  @override
+  _MapPageState createState() => _MapPageState();
+}
+
+class _MapPageState extends State<MapPage> {
+  final FirebaseFirestore firestore = FirebaseFirestore.instance;
+  List<LocationModel> locations = List();
+
+  List<MapObject> mapObjects = List();
+  List<LogModel> allPaths = List() ;
+  List<LogModel> visiblePath = List();
+  LocationModel selectedQr;
+  LocationModel selectedSearch;
+
+  final searchController = FloatingSearchBarController();
 
   final BehaviorSubject<List<LocationModel>> searchResultSupject =
       BehaviorSubject.seeded([]);
@@ -27,7 +40,115 @@ class MapPage extends StatelessWidget {
   final CollectionReference locationsRef =
       FirebaseFirestore.instance.collection('locations');
 
-  MapPage({Key key}) : super(key: key);
+  final CollectionReference pathsRef =
+      FirebaseFirestore.instance.collection('logs');
+
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    loadData() ;
+  }
+
+  void loadData() async {
+    this.locations.clear();
+    this.mapObjects.clear();
+    this.allPaths.clear() ;
+    var pathsData = await pathsRef.get();
+    var locationsData = await locationsRef.get();
+    locationsData.docs.forEach((element) {
+      var locationModel = LocationModel.fromJson(element.id, element.data());
+      locations.add(locationModel);
+      if (locationModel.type == 1) {
+        mapObjects.add(MapObject(
+            child: Container(
+              child: Icon(
+                Icons.place,
+                color: Colors.green,
+              ),
+            ),
+            offset: Offset(locationModel.x, locationModel.y),
+            size: Size(10, 10),
+            title: locationModel.title));
+      } else {
+        mapObjects.add(MapObject(
+            child: Container(
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: locationModel.id != selectedQr?.id
+                      ? Colors.black
+                      : Colors.blue),
+              child: Icon(Icons.qr_code,
+                  color: locationModel.id != selectedQr?.id
+                      ? Colors.white
+                      : Colors.green),
+            ),
+            offset: Offset(locationModel.x, locationModel.y),
+            size: Size(8, 8),
+            title: locationModel.title));
+      }
+    });
+    selectedQr = locations.last;
+    allPaths.addAll(pathsData.docs?.map((e) => LogModel.fromJson(e.data())));
+    setState(() {});
+  }
+
+  void updateDirections({LocationModel from , LocationModel to}) {
+    if(from != null && to != null){
+      print("calculating routes from ${from.offset} to ${to.offset}") ;
+      List<LogModel> logs = [...allPaths] ;
+      List<LogModel> path = [] ;
+      // get the nearst point to from
+      var firstLog = logs.reduce((value, element) {
+        //nearest to from
+        var valDistance = min((value.start - from.offset).distance , (value.end - from.offset).distance);
+        var elementDistance = min((element.start - from.offset).distance , (element.end - from.offset).distance);
+        return valDistance > elementDistance ? element : value ;
+      });
+      print("first Log is ${firstLog.start.dx} ${firstLog.end.dx}") ;
+      path.add(firstLog);
+      logs.remove(firstLog) ;
+      //walk
+      Offset edge = (firstLog.start - to.offset).distance < (firstLog.end - to.offset).distance? firstLog.start : firstLog.end;
+      print("new Edge is ${edge.dx}") ;
+      while(true){
+        print(allPaths.where((element) {
+          return element.start == edge || element.end == edge ;
+        }).length);
+        var nextLog = allPaths.where((element) {
+          return element.start == edge || element.end == edge ;
+        }).reduce((value, element) {
+          //nearest to from
+          var valDistance = value.start == edge ? (value.end - edge).distance : (value.start - edge).distance;
+          var elementDistance = value.start == edge ? (element.end - edge).distance :(element.start - edge).distance ;
+          print("val distance ${valDistance}");
+          print("element distance ${elementDistance}");
+          return valDistance > elementDistance ? element : value ;
+        });
+        var newEdge = nextLog.start == edge ? nextLog.end : nextLog.start ;
+        print(nextLog.start.dx);
+        print(edge.dx);
+        print(nextLog.start == edge);
+        print("new Edge is ${newEdge.dx}") ;
+        //getting far from our target
+        print((newEdge - to.offset).distance ) ;
+        print((edge - to.offset).distance ) ;
+        if((newEdge - to.offset).distance > (edge - to.offset).distance){
+          print("new Edge is far from destination ") ;
+          break ;
+        }else {
+          path.add(nextLog) ;
+          edge = newEdge ;
+          print("next Log is ${nextLog.start.dx} ${nextLog.end.dx}") ;
+        }
+      }
+      visiblePath.clear() ;
+      visiblePath.addAll(path) ;
+      setState(() {
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,11 +162,14 @@ class MapPage extends StatelessWidget {
           String cameraScanResult = await scanner.scan();
           DocumentSnapshot location =
               await locationsRef.doc(cameraScanResult).get();
-          LocationModel locationData =
+          selectedQr =
               LocationModel.fromJson(location.id, location.data());
-          selectedQrSubject.add(locationData);
+          setState(() {});
+          if(selectedSearch != null)
+            updateDirections(from: selectedQr , to: selectedSearch) ;
+
           Fluttertoast.showToast(
-              msg: locationData.x.toString(),
+              msg: selectedQr.x.toString(),
               toastLength: Toast.LENGTH_SHORT,
               gravity: ToastGravity.CENTER,
               timeInSecForIosWeb: 1,
@@ -57,62 +181,22 @@ class MapPage extends StatelessWidget {
       ),
       body: Stack(
         children: [
-          StreamBuilder<LocationModel>(
-              stream: selectedQrSubject.stream,
-              builder: (context, selectedQrSnapshot) {
-                return Center(
-                  child: StreamBuilder<QuerySnapshot>(
-                      stream: locationsRef.snapshots(),
-                      builder: (context, snapshot) {
-                        List<MapObject> locations = snapshot.data.docs.map((e) {
-                          var locationModel =
-                              LocationModel.fromJson(e.id, e.data());
-                          if (locationModel.type == 1) {
-                            return MapObject(
-                                child: Container(
-                                  child: Icon(
-                                    Icons.place,
-                                    color: Colors.green,
-                                  ),
-                                ),
-                                offset:
-                                    Offset(locationModel.x, locationModel.y),
-                                size: Size(10, 10),
-                                title: locationModel.title);
-                          } else {
-                            return MapObject(
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: locationModel.id !=
-                                              selectedQrSnapshot?.data?.id
-                                          ? Colors.black
-                                          : Colors.blue),
-                                  child: Icon(Icons.qr_code,
-                                      color: locationModel.id !=
-                                              selectedQrSnapshot?.data?.id
-                                          ? Colors.white
-                                          : Colors.green),
-                                ),
-                                offset:
-                                    Offset(locationModel.x, locationModel.y),
-                                size: Size(8, 8),
-                                title: locationModel.title);
-                          }
-                        }).toList();
-
-                        return ZoomContainer(
-                            zoomLevel: 4,
-                            selectedQrOffset: selectedQrSnapshot.data != null
-                                ? Offset(selectedQrSnapshot.data.x,
-                                    selectedQrSnapshot.data.y)
-                                : Offset(0, 0),
-                            imageProvider: Image.asset("assets/map.png").image,
-                            objects: locations);
-                      }),
-                );
-              }),
+          ZoomContainer(
+              zoomLevel: 1,
+              // selectedLocation: locations.firstWhere((element) => element.offset.dx == selectedQrSnapshot?.data?.x && element.offset.dy == selectedQrSnapshot?.data?.y , orElse: ()=>null),
+              imageProvider: Image.asset("assets/map.png").image,
+              objects: mapObjects ,
+          route: visiblePath),
           buildFloatingSearchBar(context),
+          Positioned(
+              bottom: 0,
+              left: 0,
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(searchController.query),
+                ),
+              ))
         ],
       ),
     );
@@ -127,6 +211,7 @@ class MapPage extends StatelessWidget {
       scrollPadding: const EdgeInsets.only(top: 16, bottom: 56),
       transitionDuration: const Duration(milliseconds: 800),
       transitionCurve: Curves.easeInOut,
+      controller: searchController,
       physics: const BouncingScrollPhysics(),
       axisAlignment: isPortrait ? 0.0 : -1.0,
       openAxisAlignment: 0.0,
@@ -134,6 +219,7 @@ class MapPage extends StatelessWidget {
       debounceDelay: const Duration(milliseconds: 500),
       onQueryChanged: (query) async {
         // Call your model, bloc, controller here.
+        if (query.length == 0) return;
         final strFrontCode = query.substring(0, query.length - 1);
         final strEndCode = query.characters.last;
         final limit =
@@ -161,7 +247,7 @@ class MapPage extends StatelessWidget {
           ),
         ),
         FloatingSearchBarAction.searchToClear(
-          showIfClosed: false,
+          showIfClosed: true,
         ),
       ],
       builder: (context, transition) {
@@ -171,28 +257,39 @@ class MapPage extends StatelessWidget {
             color: Colors.white,
             elevation: 5.0,
             child: StreamBuilder<List<LocationModel>>(
-              stream: searchResultSupject,
-              builder: (context, snapshot) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: snapshot?.data?.map((location) {
-                    return Container(
-                      color: Colors.white10,
-                      alignment: Alignment.centerLeft,
-                      padding: EdgeInsets.only(left: 16),
-                      height: 40,child: Text(
-                      location.title ,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold ,
-                        fontSize: 16
-                      ),
-                    ),);
-                  })?.toList()??Container(),
-                );
-              }
-            ),
+                stream: searchResultSupject,
+                builder: (context, snapshot) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: snapshot?.data?.map((location) {
+                          return GestureDetector(
+                            onTap: () {
+                              searchController.close();
+                              searchController.query = location.title;
+                              selectedSearch = location ;
+                              setState(() {
+                              });
+                              if(selectedQr != null){
+                                updateDirections(from: selectedQr , to: selectedSearch);
+                              }
+                            },
+                            child: Container(
+                              color: Colors.white10,
+                              alignment: Alignment.centerLeft,
+                              padding: EdgeInsets.only(left: 16),
+                              height: 40,
+                              child: Text(
+                                location.title,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                            ),
+                          );
+                        })?.toList()??[],
+                  );
+                }),
           ),
         );
       },
